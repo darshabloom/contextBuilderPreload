@@ -34,7 +34,7 @@ import {
   sourcesOf,
   splitConcept,
 } from '../lib/merge';
-import { applyClusters, assignTiers, clusterEdges, conceptsAtLevel, coverage, crossingRatio } from '../lib/cluster';
+import { applyClusters, assignTiers, clusterEdges, conceptsAtLevel, conceptsInArea, coverage, crossingRatio } from '../lib/cluster';
 import { chunkText, chooseStrategy, guessRole, PAGE_BREAK } from '../lib/chunk';
 import { docxXmlToText, dropRunningLines, looksLikeHeading, looksLikeRtf, pdfItemsToText, rtfToText } from '../lib/parse';
 import { emptyModel, newId, type Model, type Source } from '../lib/types';
@@ -628,6 +628,18 @@ check('opening one area shows only that area', (() => {
   const shown = conceptsAtLevel(tiered, 1, [first.id]);
   return shown.length === first.memberIds.length && shown.every((c) => c.clusterId === first.id);
 })());
+check('focused area contains only its key concepts', (() => {
+  const id = tiered.clusters[0].id;
+  const members = conceptsInArea(tiered, id);
+  return members.length > 0 && members.every((c) => c.clusterId === id && !c.absorbedInto && c.status !== 'REJECTED');
+})());
+check('focused area can reveal all of its detail without unrelated areas', (() => {
+  const id = tiered.clusters[0].id;
+  const all = conceptsInArea(tiered, id, true);
+  const key = conceptsInArea(tiered, id);
+  return all.length >= key.length && all.length === visibleConcepts(tiered).filter((c) => c.clusterId === id).length;
+})());
+check('unknown area returns no concepts', conceptsInArea(tiered, 'cl_doesnotexist', true).length === 0);
 check('level 3 shows everything', conceptsAtLevel(tiered, 3).length === visibleConcepts(tiered).length);
 check('level 2 is between the two', (() => {
   const n = conceptsAtLevel(tiered, 2).length;

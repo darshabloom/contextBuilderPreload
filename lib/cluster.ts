@@ -201,6 +201,16 @@ export function conceptsAtLevel(model: Model, level: Level, openClusters: string
   return live.filter((c) => open.has(c.clusterId));
 }
 
+/** Isolate a single area for focused exploration, without losing its evidence. */
+export function conceptsInArea(model: Model, clusterId: string, includeDetail = false): Concept[] {
+  if (!model.clusters.some((area) => area.id === clusterId)) return [];
+  const members = model.concepts.filter((c) => onMap(c) && c.clusterId === clusterId);
+  if (includeDetail) return members;
+  const keyConcepts = members.filter((c) => c.tier === 2);
+  // A small area consisting entirely of detail should still be explorable.
+  return keyConcepts.length ? keyConcepts : members.slice(0, 12);
+}
+
 export type Coverage = {
   sourceId: string;
   name: string;
