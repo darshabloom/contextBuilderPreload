@@ -24,7 +24,7 @@ import ClusterNode from './ClusterNode';
 import StoryBar from './StoryBar';
 import { usePreload } from '@/lib/preloadStore';
 import { visibleRelationships } from '@/lib/reducer';
-import { clusterEdges, conceptsAtLevel, type Level } from '@/lib/cluster';
+import { clusterEdges, conceptsAtLevel, conceptsInArea, type Level } from '@/lib/cluster';
 import { sourcesOf } from '@/lib/merge';
 import { activeOutline, outlineLevel } from '@/lib/outline';
 import { buildStory, revealOf, revealOfEdge, stepIndex } from '@/lib/story';
@@ -101,6 +101,7 @@ function writtenRank(model: Model, c: Concept, excerptOrd: Map<string, number>):
 function Flow() {
   const model = usePreload((s) => s.model)!;
   const level = usePreload((s) => s.level);
+  const setLevel = usePreload((s) => s.setLevel);
   const openClusters = usePreload((s) => s.openClusters);
   const toggleCluster = usePreload((s) => s.toggleCluster);
   const selectedSources = usePreload((s) => s.selectedSources);
@@ -122,6 +123,7 @@ function Flow() {
   const paneH = useStore((s) => s.height);
   const initialised = useNodesInitialized();
   const shapeRef = useRef('');
+  const [focusedClusterId, setFocusedClusterId] = useState<string | null>(null);
   /*
    * Sizes are estimated for the first layout, then measured. React Flow
    * reports each box's real size; the map is laid out again with it, so a row
@@ -145,21 +147,44 @@ function Flow() {
     });
   }, []);
 
-  const outline = useMemo(() => activeOutline(model), [model]);
+  const focusedArea = useMemo(
+    () => model.clusters.find((area) => area.id === focusedClusterId) ?? null,
+    [model, focusedClusterId]
+  );
+  const focusArea = useCallback((areaId: string) => {
+    if (!model.clusters.some((area) => area.id === areaId)) return;
+    setFocusedClusterId(areaId);
+    setLevel(2);
+    setStoryStep(null);
+    select('');
+  }, [model, setLevel, setStoryStep, select]);
+  const closeArea = useCallback(() => {
+    setFocusedClusterId(null);
+    setLevel(1);
+    setStoryStep(null);
+    select('');
+  }, [setLevel, setStoryStep, select]);
+
+  // Focus changes the map's scope, not just its zoom level.
+  const outline = useMemo(() => focusedArea ? null : activeOutline(model), [model, focusedArea]);
 
   const shown = useMemo(
-    () => (outline ? outlineLevel(model, level as 1 | 2 | 3, openClusters) : conceptsAtLevel(model, level as Level, openClusters)),
-    [model, level, openClusters, outline]
+    () => focusedArea
+      ? conceptsInArea(model, focusedArea.id, level === 3)
+      : outline
+        ? outlineLevel(model, level as 1 | 2 | 3, openClusters)
+        : conceptsAtLevel(model, level as Level, openClusters),
+    [model, level, openClusters, outline, focusedArea]
   );
 
   // A collapsed area stands for its members, so the story counts them: the
   // area appears with the step that brings its first member.
   const storyConcepts = useMemo(() => {
-    if (outline || level === 3) return shown;
+    if (focusedArea || outline || level === 3) return shown;
     const collapsed = new Set(model.clusters.filter((cl) => !openClusters.includes(cl.id)).map((cl) => cl.id));
     const ids = new Set(shown.map((c) => c.id));
     return [...shown, ...model.concepts.filter((c) => collapsed.has(c.clusterId) && !ids.has(c.id))];
-  }, [model, shown, level, openClusters, outline]);
+  }, [model, shown, level, openClusters, outline, focusedArea]);
   const story = useMemo(() => buildStory(model, storyMode, storyConcepts), [model, storyMode, storyConcepts]);
   const index = useMemo(() => stepIndex(story), [story]);
   const step = storyStep === null || !story.steps.length ? null : Math.min(storyStep, story.steps.length - 1);
@@ -177,7 +202,7 @@ function Flow() {
 
     // Areas appear whenever something is still collapsed. A map with a
     // skeleton shows its parts instead, as boxes that open in place.
-    const collapsed = outline || level === 3 ? [] : model.clusters.filter((cl) => !openClusters.includes(cl.id));
+    const collapsed = focusedArea || outline || level === 3 ? [] : model.clusters.filter((cl) => !openClusters.includes(cl.id));
     for (const cl of collapsed) sizes[cl.id] = measured[cl.id] ?? CLUSTER_SIZE;
 
     // Layout wants concepts, so an area borrows the shape of one. It is only
@@ -203,7 +228,7 @@ function Flow() {
       contest: null,
     }));
 
-    const clusterLinks = outline || level === 3
+    const clusterLinks = focusedArea || outline || level === 3
       ? []
       : clusterEdges(model).filter((e) => collapsed.some((c) => c.id === e.from) && collapsed.some((c) => c.id === e.to));
 
@@ -267,6 +292,7 @@ function Flow() {
           members: members.length,
           contested: members.filter((c) => c.status === 'CONTESTED').length,
           open: false,
+          onOpen: () => focusArea(cl.id),
         },
       };
     });
@@ -382,10 +408,10 @@ function Flow() {
     }));
 
     return { nodes: [...clusterNodes, ...conceptNodes], edges: [...conceptEdges, ...areaEdges], boxes };
-  }, [model, shown, level, openClusters, dimmed, selectedConcept, outline, index, step, savedTexts, confirm, reject, confirmRel, rejectRel, answer, answering, saveConceptQuestion, measured]);
+  }, [model, shown, level, openClusters, focusedArea, focusArea, dimmed, selectedConcept, outline, index, step, savedTexts, confirm, reject, confirmRel, rejectRel, answer, answering, saveConceptQuestion, measured]);
 
   // Refit whenever what is on screen changes shape, not on every render or step.
-  const shape = `${level}|${openClusters.join(',')}|${nodes.length}|${edges.length}|${Object.keys(measured).length}`;
+  const shape = `${focusedArea?.id ?? 'all'}|${level}|${openClusters.join(',')}|${nodes.length}|${edges.length}|${Object.keys(measured).length}`;
   useEffect(() => {
     if (!initialised) return;
     if (shapeRef.current === shape) return;
@@ -422,22 +448,26 @@ function Flow() {
 
   const onNodeClick = useCallback(
     (_e: unknown, node: Node) => {
+      if (node.type === 'cluster') {
+        focusArea(node.id);
+        return;
+      }
       if (node.type === 'concept') select(node.id);
     },
-    [select]
+    [focusArea, select]
   );
 
   const onNodeDoubleClick = useCallback(
     (_e: unknown, node: Node) => {
       if (node.type === 'cluster') {
-        toggleCluster(node.id);
+        focusArea(node.id);
         return;
       }
       // On a map with a skeleton a part opens in place to show what it holds.
       const c = model.concepts.find((x) => x.id === node.id);
       if (c?.skeleton === 'PART' && c.clusterId) toggleCluster(c.clusterId);
     },
-    [toggleCluster, model]
+    [focusArea, toggleCluster, model]
   );
 
   return (
@@ -448,6 +478,7 @@ function Flow() {
       edgeTypes={edgeTypes}
       onNodeClick={onNodeClick}
       onNodeDoubleClick={onNodeDoubleClick}
+      zoomOnDoubleClick={false}
       nodesDraggable={false}
       fitView
       fitViewOptions={{ padding: FIT_PADDING, maxZoom: 0.9 }}
@@ -460,7 +491,15 @@ function Flow() {
       <Background variant={BackgroundVariant.Dots} gap={28} size={1} color="#e2e8f0" />
       <Controls showInteractive={false} />
       <Panel position="top-left">
-        <LevelControl hasOutline={Boolean(outline)} parts={outline?.partIds.length ?? 0} />
+        <LevelControl
+          hasOutline={Boolean(outline)}
+          parts={outline?.partIds.length ?? 0}
+          focusedArea={focusedArea ? {
+            label: focusedArea.label,
+            count: model.concepts.filter((c) => c.clusterId === focusedArea.id && !c.absorbedInto && c.status !== 'REJECTED').length,
+          } : null}
+          onBack={closeArea}
+        />
       </Panel>
       {story.steps.length > 0 && (
         <Panel position="bottom-center" className="story-panel">
@@ -479,11 +518,31 @@ function Flow() {
   );
 }
 
-function LevelControl({ hasOutline, parts }: { hasOutline: boolean; parts: number }) {
+function LevelControl({
+  hasOutline, parts, focusedArea, onBack,
+}: {
+  hasOutline: boolean;
+  parts: number;
+  focusedArea: { label: string; count: number } | null;
+  onBack: () => void;
+}) {
   const level = usePreload((s) => s.level);
   const setLevel = usePreload((s) => s.setLevel);
   const model = usePreload((s) => s.model);
   const open = usePreload((s) => s.openClusters);
+
+  if (focusedArea) {
+    return (
+      <div className="level-control area-focused-control">
+        <button className="area-back" onClick={onBack}>← All areas</button>
+        <strong className="area-focused-name" title={focusedArea.label}>{focusedArea.label}</strong>
+        <span className="area-focused-count">{focusedArea.count} concepts</span>
+        <span className="area-focused-divider" aria-hidden="true" />
+        <button className={level === 2 ? 'level-on' : ''} onClick={() => setLevel(2)}>Key concepts</button>
+        <button className={level === 3 ? 'level-on' : ''} onClick={() => setLevel(3)}>All details</button>
+      </div>
+    );
+  }
 
   const labels: Record<Level, string> = { 1: hasOutline ? 'Overview' : 'Areas', 2: 'Main', 3: 'Everything' };
 
@@ -498,9 +557,9 @@ function LevelControl({ hasOutline, parts }: { hasOutline: boolean; parts: numbe
         {level === 1
           ? hasOutline
             ? `main point and ${parts} parts${open.length ? `, ${open.length} open` : ''} · double-click a part`
-            : `${model?.clusters.length ?? 0} areas${open.length ? `, ${open.length} open` : ''}`
+            : `${model?.clusters.length ?? 0} areas · click an area to explore`
           : level === 2
-            ? 'main concepts'
+            ? 'main concepts · choose Areas to explore one at a time'
             : 'including detail'}
       </span>
     </div>

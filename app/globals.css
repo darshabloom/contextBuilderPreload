@@ -545,6 +545,25 @@ button.primary:hover:not(:disabled) { background: #1e293b; }
 .cluster-meta { font-size: 12px; color: var(--muted); display: flex; gap: 10px; }
 .cluster-contested { color: var(--contested); }
 .cluster-hint { font-size: 10.5px; color: #94a3b8; margin-top: 6px; }
+.cluster-open-button {
+  display: inline-block; margin-top: 8px; border: 1px solid #cbd5e1;
+  border-radius: 5px; padding: 5px 9px; background: #f8fafc;
+  color: #334155; font: inherit; font-size: 11px; font-weight: 600;
+  cursor: pointer;
+}
+.cluster-open-button:hover, .cluster-open-button:focus-visible {
+  background: #e2e8f0; outline: 2px solid #2563eb; outline-offset: 2px;
+}
+.area-focused-control { max-width: calc(100vw - 370px); flex-wrap: wrap; row-gap: 5px; }
+.area-focused-control .area-back { border-right: 1px solid #e2e8f0; border-radius: 0; color: #334155; font-weight: 600; }
+.area-focused-name { font-size: 12px; padding: 4px 9px; max-width: 290px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.area-focused-count { font-size: 11px; white-space: nowrap; color: #64748b; }
+.area-focused-divider { width: 1px; height: 22px; background: #e2e8f0; margin: 0 4px; }
+@media (max-width: 720px) {
+  .area-focused-control { max-width: calc(100vw - 40px); }
+  .area-focused-name { max-width: 180px; }
+  .area-focused-count { display: none; }
+}
 
 .node-dim { opacity: .22; }
 .node-picked .node { outline: 2px solid var(--ink); outline-offset: 3px; }

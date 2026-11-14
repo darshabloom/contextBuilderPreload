@@ -7,6 +7,7 @@ export type ClusterNodeData = {
   members: number;
   contested: number;
   open: boolean;
+  onOpen?: () => void;
 };
 
 /*
@@ -27,7 +28,7 @@ export default function ClusterNode({ data }: NodeProps) {
         {d.members} {d.members === 1 ? 'concept' : 'concepts'}
         {d.contested > 0 && <span className="cluster-contested">{d.contested} contested</span>}
       </div>
-      <div className="cluster-hint">double-click to open</div>
+      <button type="button" className="cluster-open-button" onClick={(e) => { e.stopPropagation(); d.onOpen?.(); }}>Explore area →</button>
       <Handle type="source" position={Position.Right} className="handle" />
     </div>
   );
